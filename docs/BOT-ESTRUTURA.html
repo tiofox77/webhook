@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SuperLoja — Estrutura do Bot de Atendimento</title>
+<!--
+  Mapa do BOT (messenger-chatbot.js). Extraído do código a 2026-08-07, não
+  escrito de memória: 3.279 linhas, 184 KB, 127 funções e rotas.
+  Para uma IA que vai analisar e propor melhorias: começa pela secção 2 (fluxo),
+  depois 6 (armadilhas) — é onde estão as decisões que parecem estranhas e não são.
+-->
+<style>
+  :root { --bg:#0b1220; --panel:#111a2c; --border:#1e293b; --tx:#cbd5e1; --dim:#64748b;
+          --azul:#38bdf8; --verde:#10b981; --ambar:#f59e0b; --roxo:#a78bfa; --verm:#ef4444; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--tx); font:15px/1.55 system-ui,Segoe UI,sans-serif; padding:28px 18px 60px; }
+  main { max-width:1080px; margin:0 auto; }
+  h1 { font-size:1.5em; color:#e2e8f0; }
+  h2 { font-size:1.12em; color:#e2e8f0; margin:34px 0 12px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+  h3 { font-size:.95em; color:var(--azul); margin:18px 0 8px; }
+  p { margin:8px 0; }
+  .sub { color:var(--dim); font-size:.85em; margin-top:4px; }
+  .caixa { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin:10px 0; }
+  .regra { border-left:3px solid var(--verm); padding-left:12px; margin:10px 0; }
+  .nota { border-left:3px solid var(--ambar); padding-left:12px; margin:10px 0; }
+  table { width:100%; border-collapse:collapse; font-size:.85em; margin:10px 0; display:block; overflow-x:auto; }
+  th { text-align:left; color:var(--dim); font-weight:600; padding:7px 10px; border-bottom:1px solid var(--border); }
+  td { padding:7px 10px; border-bottom:1px solid rgba(30,41,59,.6); vertical-align:top; }
+  code { font-family:Consolas,monospace; font-size:.92em; color:#93c5fd; background:rgba(56,189,248,.07); padding:1px 5px; border-radius:4px; word-break:break-word; }
+  pre { background:#0a0f1a; border:1px solid var(--border); border-radius:8px; padding:12px 14px; overflow-x:auto; font:12.5px/1.5 Consolas,monospace; color:#9fb3c8; margin:10px 0; }
+  ul { margin:8px 0 8px 22px; } li { margin:4px 0; }
+  .tag { display:inline-block; font-size:.72em; font-weight:700; padding:2px 9px; border-radius:20px; margin-right:6px; }
+  .t-verde { color:var(--verde); background:rgba(16,185,129,.1); }
+  .t-ambar { color:var(--ambar); background:rgba(245,158,11,.1); }
+  .t-roxo { color:var(--roxo); background:rgba(167,139,250,.12); }
+  .t-verm { color:var(--verm); background:rgba(239,68,68,.1); }
+</style>
+</head>
+<body>
+<div style="background:#2a1010;border:2px solid #ef4444;border-radius:10px;padding:14px 18px;margin:0 0 20px;color:#fca5a5;font:15px/1.5 system-ui,sans-serif">
+<b>⚠️ DESACTUALIZADO — parado em 07-Ago-2026.</b> Este documento diz que as pausas se perdem
+em cada restart e aponta "persistir o disjuntor" como melhoria nº1: <b>isso já foi feito</b>
+(<code>data/crm/bot-state.json</code>, 07-Ago). Os números de linhas e KB também estão velhos.
+Para o estado real, lê <b>docs/ARQUITETURA.html</b> e <b>docs/PRD.md</b>, reescritos a 08-Ago.
+O que continua válido aqui: as <b>armadilhas da §6</b> — essas custaram vendas e não caducam.
+</div>
+<main>
+
+<h1>🤖 Estrutura do Bot de Atendimento</h1>
+<p class="sub"><code>C:\superloja\webhook-server\messenger-chatbot.js</code> — 3.279 linhas · 184 KB · 127 funções e rotas · porta <b>3335</b></p>
+<p class="sub">Extraído do código a <b>2026-08-07</b>. Documentos irmãos: <code>docs/ARQUITETURA.html</code> (sistema todo) · <code>docs/PRD.md</code> (requisitos, receitas e armadilhas).</p>
+
+<div class="caixa">
+<b>Para quem vai analisar:</b> este bot atende clientes reais de uma loja em Luanda, com dinheiro real.
+Quase toda a decisão que parece estranha aqui nasceu de uma venda perdida — a secção <b>6</b> tem a lista,
+com a conversa que a originou. <b>Ler essa secção antes de propor mudanças</b> evita reintroduzir bugs já pagos.
+</div>
+
+<h2>1. O que este processo é</h2>
+<p>Um servidor Express que atende clientes em <b>três canais</b> e é o <b>único</b> componente
+autorizado a falar com clientes. Nenhuma outra parte do sistema (nem o agente Hermes, que tem terminal)
+envia mensagens a clientes — delegam aqui.</p>
+<table>
+<tr><th>Canal</th><th>Entrada</th><th>Saída</th><th>Estado</th></tr>
+<tr><td>WhatsApp</td><td><code>POST /whatsapp</code> (do bridge, só loopback)</td><td>bridge Baileys :3010</td><td>✅ principal (~80% do volume)</td></tr>
+<tr><td>Messenger</td><td><code>POST /webhook</code> (Meta)</td><td>Graph API</td><td>✅ funcional</td></tr>
+<tr><td>Instagram DM</td><td><code>POST /webhook</code> (Meta)</td><td>Graph API</td><td>⚠️ gera resposta mas <b>não entrega</b> — falta Acesso Avançado</td></tr>
+</table>
+
+<h2>2. O fluxo de uma mensagem</h2>
+<pre>
+CLIENTE escreve
+   │
+   ├─ WhatsApp: bridge (13 patches locais) resolve @lid→telefone, descarrega
+   │            foto/áudio em base64, junta contexto de citação → POST /whatsapp
+   └─ Meta: POST /webhook
+   │
+   ▼
+registarAtividadeCliente()      guarda TODA entrada (mesmo suprimida)
+   │
+   ▼
+disjuntorBloqueia()  ──sim──►  regista (modo: pausado-handoff|pausado-disjuntor)
+   │ não                        + disjuntorEncaminha() → dono no WhatsApp
+   ▼                            [SEM isto as mensagens desapareciam]
+transcreverAudio()              nota de voz → texto (faster-whisper local, pt, ~4s)
+produtoDaFotoCitada()           reply a foto nossa → nome do produto exacto
+   │
+   ▼
+classifyIntent()  +  aiReply()
+   │                   ├─ fetchCatalog()      catálogo paginado c/ descrições
+   │                   ├─ buildSystemPrompt() ~40 blocos de regras (ver §3)
+   │                   ├─ getHistory(6)       últimas 6 trocas
+   │                   └─ blocos de imagem    formato ANTHROPIC (ver §6)
+   ▼
+aiChatComReserva()   AISA/Haiku → MiniMax → Sakana/Fugu → respostaSemIA()
+   │                 (carteiras separadas; a 1ª que responder ganha)
+   ▼
+processMarkers()     marcadores ocultos que a IA emite:
+   │                 &lt;&lt;FOTO&gt;&gt; &lt;&lt;PEDIDO&gt;&gt; &lt;&lt;DEPOIS&gt;&gt; &lt;&lt;DESEJO&gt;&gt;
+   │                 &lt;&lt;CONSULTAR&gt;&gt; &lt;&lt;HUMANO&gt;&gt;
+   ▼
+RE_REVENDA           detector DETERMINÍSTICO (não confia no marcador)
+   ▼
+formatForPlatform() → text-guard.js   ← ÚLTIMA porta antes do cliente
+   ▼
+sendWhatsApp / sendMessage
+   ▼
+disjuntorRegistaResposta() · logConversation() · maybeAutoLearn()
+</pre>
+
+<h2>3. Os 9 grupos de funções</h2>
+<table>
+<tr><th>Grupo</th><th>Funções</th><th>Nota para quem analisa</th></tr>
+<tr><td><b>Entrada e transporte</b> (10)</td><td><code>handleWhatsApp</code> <code>handleMessage</code> <code>sendWhatsApp*</code> <code>sendMessage</code> <code>enviarAoCliente</code></td><td>Dois caminhos quase paralelos (WhatsApp vs Meta) — <b>duplicação real</b>, candidata a unificação, mas com risco: divergiram por motivos concretos</td></tr>
+<tr><td><b>Cérebro / IA</b> (13)</td><td><code>aiReply</code> <code>aiChat</code> <code>aiChatComReserva</code> <code>buildSystemPrompt</code> <code>cerebroAoVivo</code></td><td><code>buildSystemPrompt</code> é o coração: um array de ~40 blocos. Cresce a cada aprendizagem</td></tr>
+<tr><td><b>Catálogo e produtos</b> (15)</td><td><code>fetchCatalog</code> <code>acharProdutoCatalogo</code> <code>findProductImage</code> <code>mesmoProduto</code> <code>blocoCampanha</code></td><td>Matching por score (exacto &gt; contém &gt; comprimento). Modelo (X83/Pro6) é discriminador</td></tr>
+<tr><td><b>Anti-loop / handoff</b> (10)</td><td><code>disjuntor*</code> <code>_parecidas</code> <code>escalarRevenda</code></td><td>Estado <b>em memória</b> (<code>_dj</code>) — perde-se em cada restart. Limitação conhecida</td></tr>
+<tr><td><b>Follow-up</b> (9)</td><td><code>candidatosFollowup</code> <code>executarFollowups</code> <code>mensagemReengajar</code> <code>promocaoAtiva</code></td><td>Dois patamares: quente (60min–24h) e reengajamento (3–30 dias, c/ catálogo)</td></tr>
+<tr><td><b>Aprendizagem</b> (9)</td><td><code>learnFromConversations</code> <code>recordWish</code> <code>acharDesejo</code></td><td>⚠️ O bot aprende das <b>próprias</b> respostas — já canonizou um erro (§6)</td></tr>
+<tr><td><b>Voz e média</b> (2)</td><td><code>transcreverAudio</code></td><td>faster-whisper local, modelo <code>small</code>, <code>language=pt</code>. A voz não sai da máquina</td></tr>
+<tr><td><b>Avisos ao dono</b> (5)</td><td><code>notifyCarlos</code> <code>notifyCarlosComFoto</code> <code>numerosNotificados</code></td><td>Até 5 destinatários configuráveis; encomenda vai com foto do artigo e 2 contactos</td></tr>
+<tr><td><b>Encomendas</b> (3)</td><td><code>processMarkers</code> <code>gerarCatalogoBot</code></td><td><code>processMarkers</code> é o mais denso: 6 marcadores, dedup de encomendas, escalamento</td></tr>
+</table>
+
+<h2>4. Estado e persistência</h2>
+<table>
+<tr><th>Onde</th><th>O quê</th><th>Sobrevive a restart?</th></tr>
+<tr><td><code>data/crm/conversations.json</code></td><td>histórico (com <code>telefone</code>, <code>modo</code>, <code>entregue</code>)</td><td>✅</td></tr>
+<tr><td><code>data/crm/chatbot-knowledge.json</code></td><td>FAQ destilada + tom</td><td>✅</td></tr>
+<tr><td><code>data/crm/bot-alma.md</code></td><td>identidade + políticas confirmadas</td><td>✅</td></tr>
+<tr><td><code>data/crm/{orders,leads,wishlist,promessas,followups}.json</code></td><td>CRM</td><td>✅</td></tr>
+<tr><td><code>data/promocao-ativa.json</code></td><td>promoção — <b>só o dono edita</b></td><td>✅</td></tr>
+<tr><td><code>_dj</code> (Map)</td><td>estado do disjuntor e pausas</td><td>❌ perde-se</td></tr>
+<tr><td><code>_mostrados</code>, <code>_fotosEnviadas</code></td><td>o que foi mostrado a cada cliente (6h)</td><td>❌ perde-se</td></tr>
+<tr><td><code>catalogCache</code></td><td>catálogo (10 min)</td><td>❌ (recarrega)</td></tr>
+</table>
+<div class="nota">O sistema reinicia com frequência (cada deploy). O estado em memória perder-se significa
+que <b>um handoff ativo pode ser esquecido</b> e o bot voltar a falar por cima do dono. Ponto conhecido, ainda não resolvido.</div>
+
+<h2>5. Fronteiras invioláveis</h2>
+<div class="regra"><b>Só este processo fala com clientes.</b> O agente Hermes tem terminal; se falasse com clientes, um cliente mal-intencionado teria porta para a máquina. O Hermes decide e redige, este bot entrega.</div>
+<div class="regra"><b>Nenhum facto de negócio se inventa.</b> Garantia (1 dia para verificar), devolução (só troca), entrega (&lt;24h Luanda, paga por zona), pagamento na entrega — só o que está em <code>bot-alma.md</code>. <code>text-guard.js</code> corre <b>sempre</b> como última porta.</div>
+<div class="regra"><b>Promoções e preços de revenda são do dono.</b> O bot nunca gera uma promoção; lê <code>promocao-ativa.json</code>, vazio por omissão.</div>
+<div class="regra"><b>Escritas administrativas só de loopback</b> (<code>soLoopback</code>).</div>
+
+<h2>6. Armadilhas — cada uma custou uma venda</h2>
+<p class="sub">Se uma decisão do código parecer estranha, é provável que esteja aqui.</p>
+<table>
+<tr><th>Decisão que parece estranha</th><th>Porquê existe</th></tr>
+<tr><td>Fechos com recomendação, nunca "qual destes te interessa?"</td><td><b>45 de 53</b> clientes perdidos morreram numa pergunta aberta. Só <b>1</b> desistiu depois de lhe pedirem nome/bairro</td></tr>
+<tr><td>Filtro <code>RE_FECHO_MAU</code> na destilação</td><td>O bot <b>aprendeu o próprio erro</b>: a resposta à pergunta mais frequente ficou gravada na FAQ com o fecho aberto. Uma FAQ é um exemplo concreto e <b>vence qualquer regra do prompt</b> (3 tentativas falharam antes de encontrar isto)</td></tr>
+<tr><td>Pedir nome+bairro+telefone numa só mensagem</td><td>14 clientes engataram e 0 compraram; vários morreram no "qual é o teu nome completo?", um levou 10 mensagens</td></tr>
+<tr><td>Vocabulário local no prompt ("brinco"=earbuds, "digital"=display LED)</td><td>Duas vendas perdidas por dicionário: o bot ofereceu <b>pulseira e pingente</b> a quem pedia earbuds</td></tr>
+<tr><td>Nome COMPLETO sempre ao lado do preço</td><td>Há 7 cabos Tipo C de 4.500 a 12.000 Kz. "Os Tipo C são 4.500" faz o cliente chegar com a expectativa errada</td></tr>
+<tr><td>Modelo exacto (12 Pro ≠ 12 Pro Max)</td><td>O bot ofereceu Pro Max a quem pediu Pro, duas vezes, e insistiu depois de corrigido. A capa não serve</td></tr>
+<tr><td>Blocos de imagem em formato <b>Anthropic</b></td><td>A AISA é "OpenAI-compat" mas <code>image_url</code> dá <b>HTTP 400</b>. Verificado nos dois formatos</td></tr>
+<tr><td>Follow-up não filtra pelo <code>intent</code> da última mensagem</td><td>Quem está a meio de uma compra responde "3" — classificado <code>unknown</code>. Excluía os leads mais quentes</td></tr>
+<tr><td>Quentes antes dos frios na fila de follow-up</td><td>A ordenação por "conversa mais antiga" punha 18 reengajamentos à frente de 2 leads a um passo de comprar</td></tr>
+<tr><td>Guarda com campo <code>excecao</code></td><td>Sem ele censurava a <b>verdade</b>: "1 dia para verificar", "só pagas quando receberes", "entregamos em qualquer bairro em menos de 24h"</td></tr>
+<tr><td>Dedup de encomendas por cliente+modelo+24h</td><td>A IA reemite <code>&lt;&lt;PEDIDO&gt;&gt;</code> a cada reconfirmação — um cliente ficou registado <b>4×</b></td></tr>
+<tr><td>Deteção de revenda determinística, não por marcador</td><td>O bot recusou-se a combinar (bem) mas <b>esqueceu o <code>&lt;&lt;HUMANO&gt;&gt;</code></b> e o dono nunca soube</td></tr>
+<tr><td>Fallback "honesto" em vez de resposta enlatada</td><td>Um cliente descreveu a TV dele e ouviu "Boa escolha! 💰 Diz-me qual é o produto"</td></tr>
+</table>
+
+<h2>7. Onde eu procuraria melhorias</h2>
+<p class="sub">Fraquezas conhecidas, por ordem do que me parece valer mais. Não são bugs — são escolhas por rever.</p>
+<ol>
+<li><b>Estado volátil</b> — disjuntor, handoff e "o que já mostrei" perdem-se em cada restart (que é frequente). Um handoff esquecido faz o bot falar por cima do dono.</li>
+<li><b><code>buildSystemPrompt</code> cresce sem limite</b> — ~40 blocos de regras, todos enviados em todas as mensagens. Custo por token e risco de o modelo diluir regras importantes. Candidato a blocos condicionais.</li>
+<li><b>Dois caminhos paralelos</b> (<code>handleWhatsApp</code> / <code>handleMessage</code>) — correções têm de ser feitas duas vezes e já houve divergência real (as etiquetas perdiam-se num ramo).</li>
+<li><b>A destilação aprende do próprio bot</b> — já canonizou um erro. Devia aprender preferencialmente de conversas que <b>deram venda</b>.</li>
+<li><b>Instagram gera e não entrega</b> — trabalho desperdiçado até haver Acesso Avançado.</li>
+<li><b>Sem testes automáticos do bot</b> — só a guarda tem suite (<code>tests-guarda.js</code>, 19/19). O resto é verificado à mão a cada mudança.</li>
+<li><b>Ficheiro único de 3.279 linhas</b> — os 9 grupos já são módulos naturais.</li>
+</ol>
+
+<h2>8. Como correr e verificar</h2>
+<pre>node --check messenger-chatbot.js          # sintaxe antes de qualquer deploy
+node tests-guarda.js                       # 19/19 — sempre que se mexer na guarda
+node ensure-bridge-patch.js --check        # 13/13 patches do bridge
+node ensure-hermes-setup.js --check        # ddgs + faster-whisper
+
+# reiniciar (NUNCA taskkill nos serviços)
+curl -X POST http://localhost:3333/api/system/restart \
+  -H "Content-Type: application/json" -d '{"confirmation":"REINICIAR"}'
+
+curl http://localhost:3335/health
+curl -X POST http://localhost:3335/api/followups/run -d '{"dryRun":true}'</pre>
+<div class="nota"><b>Aviso ao testar:</b> <code>POST /whatsapp</code> com um <code>chatId</code> inventado é processado
+mas a entrega falha; os registos de teste ficam no CRM e devem ser limpos. Nunca usar um número real de cliente em testes.</div>
+
+</main>
+</body>
+</html>

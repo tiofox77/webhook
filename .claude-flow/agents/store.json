@@ -1,0 +1,57 @@
+{
+  "agents": {
+    "agent-1786724357025-u9g18v": {
+      "agentId": "agent-1786724357025-u9g18v",
+      "agentType": "analyst",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "inherit"
+      },
+      "createdAt": "2026-08-14T16:19:17.025Z",
+      "model": "inherit",
+      "modelRoutedBy": "explicit"
+    },
+    "agent-1786725967396-xsxh01": {
+      "agentId": "agent-1786725967396-xsxh01",
+      "agentType": "code-analyzer",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "inherit"
+      },
+      "createdAt": "2026-08-14T16:46:07.396Z",
+      "model": "inherit",
+      "modelRoutedBy": "explicit"
+    },
+    "agent-1786725968274-x1809p": {
+      "agentId": "agent-1786725968274-x1809p",
+      "agentType": "analyst",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "inherit"
+      },
+      "createdAt": "2026-08-14T16:46:08.274Z",
+      "model": "inherit",
+      "modelRoutedBy": "explicit"
+    },
+    "agent-1786727178875-5dp0di": {
+      "agentId": "agent-1786727178875-5dp0di",
+      "agentType": "system-architect",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "inherit"
+      },
+      "createdAt": "2026-08-14T17:06:18.875Z",
+      "model": "inherit",
+      "modelRoutedBy": "explicit"
+    }
+  },
+  "version": "3.0.0"
+}

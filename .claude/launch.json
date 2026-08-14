@@ -1,0 +1,10 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dashboard",
+      "url": "http://localhost:3333",
+      "port": 3333
+    }
+  ]
+}

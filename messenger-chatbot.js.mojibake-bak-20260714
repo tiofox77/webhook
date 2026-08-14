@@ -1,0 +1,303 @@
+#!/usr/bin/env node
+/**
+ * Superloja Messenger Chatbot v1.0
+ * Facebook/Instagram DM Listener + Auto-Responder
+ * Location: C:\\Users\\fox/webhook-server/messenger-chatbot.js
+ * 
+ * Features:
+ * - Listen to incoming messages (Facebook Messenger + Instagram DM)
+ * - AI classification (purchase intent, question, complaint)
+ * - Auto-respond with contextual replies
+ * - Log conversations to CRM/DB
+ * - Escalate to human if needed
+ */
+
+require('dotenv').config({ path: __dirname + '/.env' });
+const express = require('express');
+const https = require('https');
+const fs = require('fs');
+const path = require('path');
+
+// â”€â”€â”€ Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const APP_PORT = process.env.CHATBOT_PORT || 3335;
+const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || process.env.VERIFY_TOKEN || 'superloja_webhook_secret_2026';
+const PAGE_ACCESS_TOKEN = process.env.FB_PAGE_TOKEN || process.env.FACEBOOK_PAGE_TOKEN || process.env.PAGE_ACCESS_TOKEN;
+const API_BASE = 'https://graph.facebook.com/v21.0';
+
+const DATA_DIR = process.env.DATA_DIR || 'C:\\superloja\\data';
+const CONVERSATIONS_LOG = DATA_DIR + '/crm/conversations.json';
+const LEADS_LOG = DATA_DIR + '/crm/leads.json';
+
+// â”€â”€â”€ Utils â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function log(level, msg) {
+  const ts = new Date().toISOString();
+  const logFile = DATA_DIR + '/logs/chatbot.log';
+  const entry = `[${ts}] [${level}] ${msg}\n`;
+  
+  if (!fs.existsSync(DATA_DIR + '/logs')) fs.mkdirSync(DATA_DIR + '/logs', { recursive: true });
+  fs.appendFileSync(logFile, entry);
+  console.log(entry);
+}
+
+function ensureDirs() {
+  [DATA_DIR, DATA_DIR + '/crm', DATA_DIR + '/logs'].forEach(dir => {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  });
+}
+
+function loadJSON(filepath) {
+  try {
+    return fs.existsSync(filepath) ? JSON.parse(fs.readFileSync(filepath, 'utf8')) : [];
+  } catch (e) {
+    log('WARN', `Failed to load ${filepath}: ${e.message}`);
+    return [];
+  }
+}
+
+function saveJSON(filepath, data) {
+  fs.writeFileSync(filepath, JSON.stringify(data, null, 2));
+}
+
+// â”€â”€â”€ Intent Classification â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function classifyIntent(text) {
+  text = text.toLowerCase().trim();
+  
+  // Purchase intent
+  if (/quanto|preÃ§o|custa|comprar|quero|pedir|encomendar|disponÃ­vel|stock|tem/i.test(text)) {
+    return { intent: 'purchase', confidence: 0.9 };
+  }
+  
+  // Question/help
+  if (/como|qual|pode|ajuda|sabe|info|info|funÃ§Ã£o|serve/i.test(text)) {
+    return { intent: 'question', confidence: 0.85 };
+  }
+  
+  // Complaint/issue
+  if (/problema|defeito|quebrado|nÃ£o funciona|ruim|pior|nÃ£o gosto|reclamaÃ§Ã£o/i.test(text)) {
+    return { intent: 'complaint', confidence: 0.9 };
+  }
+  
+  // Greeting
+  if (/oi|olÃ¡|opa|e aÃ­|hey|sup/i.test(text)) {
+    return { intent: 'greeting', confidence: 0.95 };
+  }
+  
+  // Default
+  return { intent: 'unknown', confidence: 0.5 };
+}
+
+// â”€â”€â”€ Generate Response â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function generateResponse(intent, senderName = 'Cliente') {
+  const responses = {
+    greeting: [
+      `OlÃ¡ ${senderName}! ðŸ‘‹ Bem-vindo Ã  Superloja. Como posso ajudar?`,
+      `Opa! Tudo bem? ðŸ˜Š Somos a Superloja. Quer saber sobre nossos produtos?`,
+    ],
+    purchase: [
+      `Ã“timo! ðŸ›ï¸ Qual produto vocÃª estÃ¡ interessado? Temos adaptadores, cabos, e muito mais!\\n\\nðŸ“± Confira nosso catÃ¡logo: https://superloja.vip`,
+      `Que legal! ðŸ’° Qual Ã© o produto que vocÃª procura? Posso te dar mais info + preÃ§o + frete!`,
+    ],
+    question: [
+      `Claro! ðŸ“– FaÃ§a sua pergunta e farei o possÃ­vel para ajudar!`,
+      `Fico feliz em ajudar! ðŸ¤ O que vocÃª gostaria de saber?`,
+    ],
+    complaint: [
+      `Sinto muito em ouvir isso! ðŸ˜Ÿ Quero resolver seu problema. Pode descrever o que aconteceu?\\n\\nðŸ“ž Se preferir falar direto, chame: https://wa.me/244900000000`,
+      `Desculpa! ðŸ˜” Vamos consertar isso. Me conta mais detalhes para que eu possa te ajudar melhor!`,
+    ],
+    unknown: [
+      `Entendi! ðŸ¤” Pode clarificar sua mensagem?`,
+      `Que legal! Conte mais sobre isso!`,
+    ]
+  };
+  
+  const opts = responses[intent] || responses.unknown;
+  return opts[Math.floor(Math.random() * opts.length)];
+}
+
+// â”€â”€â”€ Send Message via Messenger â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+async function sendMessage(recipientId, messageText) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      recipient: { id: recipientId },
+      message: { text: messageText }
+    });
+    
+    const options = {
+      hostname: 'graph.facebook.com',
+      path: `/v21.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body)
+      }
+    };
+    
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', d => data += d);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          resolve(json);
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }).on('error', reject);
+    
+    req.write(body);
+    req.end();
+  });
+}
+
+// â”€â”€â”€ Log Conversation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function logConversation(senderId, senderName, messageText, intent, botResponse) {
+  let convos = loadJSON(CONVERSATIONS_LOG);
+  
+  convos.push({
+    timestamp: new Date().toISOString(),
+    senderId,
+    senderName,
+    userMessage: messageText,
+    intent,
+    botResponse,
+    status: 'pending_followup'
+  });
+  
+  // Keep last 1000 conversations
+  convos = convos.slice(-1000);
+  saveJSON(CONVERSATIONS_LOG, convos);
+  
+  log('INFO', `[${senderName}] Intent: ${intent} | User: "${messageText.substring(0, 50)}"...`);
+}
+
+// â”€â”€â”€ Extract Lead Info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function extractAndLogLead(senderId, senderName, intent) {
+  if (intent !== 'purchase' && intent !== 'complaint') return;
+  
+  let leads = loadJSON(LEADS_LOG);
+  
+  // Check if lead already exists
+  const existing = leads.find(l => l.senderId === senderId);
+  if (existing) {
+    existing.lastContact = new Date().toISOString();
+    existing.intents.push(intent);
+  } else {
+    leads.push({
+      senderId,
+      name: senderName,
+      firstContact: new Date().toISOString(),
+      lastContact: new Date().toISOString(),
+      intents: [intent],
+      status: 'active',
+      notes: ''
+    });
+  }
+  
+  saveJSON(LEADS_LOG, leads);
+  log('INFO', `[LEAD] ${senderName} | Intent: ${intent}`);
+}
+
+// â”€â”€â”€ Handle Incoming Message â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+async function handleMessage(senderId, senderName, messageText) {
+  try {
+    // Classify intent
+    const { intent, confidence } = classifyIntent(messageText);
+    
+    // Generate response
+    const botResponse = generateResponse(intent, senderName);
+    
+    // Send reply
+    await sendMessage(senderId, botResponse);
+    log('INFO', `âœ… Replied to ${senderName}`);
+    
+    // Log conversation
+    logConversation(senderId, senderName, messageText, intent, botResponse);
+    
+    // Extract lead if applicable
+    extractAndLogLead(senderId, senderName, intent);
+    
+  } catch (e) {
+    log('ERROR', `Failed to handle message from ${senderName}: ${e.message}`);
+  }
+}
+
+// â”€â”€â”€ Express Routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const app = express();
+app.use(express.json());
+
+// Webhook verification (GET /webhook)
+app.get('/webhook', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  
+  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+    log('INFO', 'âœ… Webhook verified');
+    res.status(200).send(challenge);
+  } else {
+    log('WARN', 'âŒ Webhook verification failed');
+    res.sendStatus(403);
+  }
+});
+
+// Webhook events (POST /webhook)
+app.post('/webhook', (req, res) => {
+  const body = req.body;
+  
+  if (body.object !== 'page') {
+    res.sendStatus(404);
+    return;
+  }
+  
+  // Responde imediatamente (Facebook exige < 20s) e processa em background
+  res.status(200).send('EVENT_RECEIVED');
+
+  (async () => {
+    for (const entry of body.entry) {
+      for (const event of (entry.messaging || [])) {
+        if (event.message && event.message.text) {
+          const senderId   = event.sender.id;
+          const messageText = event.message.text;
+          // Messenger nao retorna name no webhook; usar ID como identificador
+          const senderName = `User_${senderId}`;
+          await handleMessage(senderId, senderName, messageText);
+        }
+      }
+    }
+  })().catch(e => log('ERROR', `Webhook processing error: ${e.message}`));
+});
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Get conversations (API)
+app.get('/api/conversations', (req, res) => {
+  const convos = loadJSON(CONVERSATIONS_LOG);
+  res.json(convos.slice(-100)); // Last 100
+});
+
+// Get leads (API)
+app.get('/api/leads', (req, res) => {
+  const leads = loadJSON(LEADS_LOG);
+  res.json(leads);
+});
+
+// â”€â”€â”€ Start Server â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+ensureDirs();
+
+app.listen(APP_PORT, () => {
+  log('INFO', `ðŸ¤– Messenger Chatbot running on port ${APP_PORT}`);
+  log('INFO', `ðŸ“ Webhook: http://localhost:${APP_PORT}/webhook`);
+  log('INFO', `ðŸ“Š Conversations API: http://localhost:${APP_PORT}/api/conversations`);
+  log('INFO', `ðŸ‘¥ Leads API: http://localhost:${APP_PORT}/api/leads`);
+});
+
+process.on('SIGTERM', () => {
+  log('INFO', 'Shutting down gracefully');
+  process.exit(0);
+});
+

@@ -1,0 +1,39 @@
+{
+  "name": "superloja-auto-poster",
+  "version": "4.1.0",
+  "description": "Automatic Facebook & Instagram poster for Superloja Angola e-commerce platform",
+  "main": "auto-poster-v4.js",
+  "scripts": {
+    "start": "node auto-poster-v4.js",
+    "post:single": "node auto-poster-v4.js single",
+    "post:carousel": "node auto-poster-v4.js carousel",
+    "post:stories": "node auto-poster-v4.js stories",
+    "post:reels": "node auto-poster-v4.js reels",
+    "dashboard": "node dashboard.js",
+    "cron:setup": "echo '0 9 * * * cd C:\\Users\\fox/webhook-server && node auto-poster-v4.js single >> C:\\superloja\\data/posting-log.txt 2>&1' | crontab -",
+    "cleanup": "rm -rf C:\\superloja\\data/img_cache/* && echo 'Cache cleaned'"
+  },
+  "keywords": [
+    "facebook",
+    "instagram",
+    "automation",
+    "social-media",
+    "ecommerce"
+  ],
+  "author": "Superloja Angola",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "form-data": "^4.0.6",
+    "node-fetch": "^3.3.2",
+    "pdfkit": "^0.19.1",
+    "sharp": "^0.35.3"
+  },
+  "devDependencies": {
+    "pdf-to-png-converter": "^4.1.1"
+  }
+}

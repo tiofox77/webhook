@@ -1,0 +1,6 @@
+web:
+  backend: outro
+  search_backend: ""
+  extract_backend: bing
+memory:
+  backend: local

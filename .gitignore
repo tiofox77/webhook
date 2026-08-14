@@ -1,0 +1,57 @@
+# ─── SEGREDOS — nunca versionar ──────────────────────────────────────────────
+# O .env tem 33 chaves: tokens da Meta (página, Instagram, ads), chaves da loja,
+# da AISA e da Sakana. Um commit destes é um incidente de segurança, não um erro
+# de arrumação — e o histórico do git guarda-o para sempre.
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+credentials*.json
+auth.json
+
+# ─── DADOS DE CLIENTES REAIS ─────────────────────────────────────────────────
+# Conversas, nomes, telefones, moradas e encomendas de pessoas de Luanda.
+# Vivem em C:/superloja/data (fora deste repo), mas se alguém os copiar para cá
+# por engano, ficam de fora à mesma.
+data/
+crm/
+conversations.json
+perfil-clientes.json
+orders.json
+leads.json
+promessas.json
+followups.json
+perguntas-hermes.json
+wishlist.json
+bot-state.json
+chatbot-training.json
+products-cache.json
+
+# ─── Dependências e binários (recuperáveis) ──────────────────────────────────
+node_modules/
+package-lock.json.bak
+cloudflared.exe
+audio_library/
+*.mp3
+*.wav
+*.onnx
+*.bin
+
+# ─── Gerado em execução ──────────────────────────────────────────────────────
+*.log
+logs/
+img_cache/
+tmp/
+_tmp-*.js
+_t.js
+_t2.js
+*.tmp
+ruvector.db
+.swarm/
+.hive-mind/
+
+# ─── Sistema ─────────────────────────────────────────────────────────────────
+Thumbs.db
+desktop.ini
+.DS_Store
