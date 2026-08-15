@@ -938,6 +938,47 @@
         "policyHash": "sha256:00b63b2f746eb8b9095bbd5e1dbae4ddd74fd92a6740b72f59f4069fbfda4737"
       },
       "hash": "sha256:9a0c029bde853f667a8b3e9687ddb3d49fb9965a5a53171b6b1840c53d631ed9"
+    },
+    {
+      "payload": {
+        "receiptId": "sha256:fbe6e1ab6d27b1bc8baa4fddb249efeba62f4f1120d0e25ed50333f721b5ebb2",
+        "previousReceiptHash": "sha256:9a0c029bde853f667a8b3e9687ddb3d49fb9965a5a53171b6b1840c53d631ed9",
+        "sequence": 23,
+        "issuedAt": 1786729458987,
+        "request": {
+          "identity": {
+            "id": "legacy-cli",
+            "type": "legacy"
+          },
+          "action": {
+            "type": "memory.write",
+            "resource": "memory_store",
+            "tool": "memory_store",
+            "server": "ruflo",
+            "namespace": "superloja",
+            "network": false,
+            "destructive": false
+          },
+          "context": {
+            "metadata": {
+              "inputDigest": "sha256:fb1d38448470b11c04e4e1ae179ef2091795138abfa36500978b3544cf948564"
+            },
+            "now": 1786729458987
+          },
+          "requestId": "a783c032-a3cf-4756-a92f-e4d08be1c835"
+        },
+        "decision": {
+          "requestId": "a783c032-a3cf-4756-a92f-e4d08be1c835",
+          "outcome": "allowed",
+          "enforcedOutcome": "allowed",
+          "mode": "legacy",
+          "reason": "legacy-default-allow",
+          "matchedRules": [],
+          "obligations": []
+        },
+        "policyHash": "sha256:00b63b2f746eb8b9095bbd5e1dbae4ddd74fd92a6740b72f59f4069fbfda4737"
+      },
+      "hash": "sha256:794ebd6fa626e94848e44905e463de434b34782699267f0858d564d0c18dcca2"
     }
   ],
   "migratedAt": 1786720822088,
